@@ -1,0 +1,36 @@
+[package]
+name = "nvecs"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "nvecslib"
+path = "src/lib.rs"
+
+[[bin]]
+name = "runner"
+path = "src/runner.rs"
+
+[dependencies]
+num-traits = "0.2"
+
+
+[dev-dependencies]
+criterion = { version = "0.5", features = ["html_reports"] }
+rand = "0.8.5"
+
+[[bench]]
+name = "bench_addition"
+harness = false
+
+[[bench]]
+name = "bench_subtraction"
+harness = false
+
+[[bench]]
+name = "bench_elementwise_multiplication"
+harness = false
+
+[[bench]]
+name = "bench_dot_product"
+harness = false
