@@ -3,10 +3,9 @@ use std::ops::*;
 //need num-traits = "0.2" under dependencies in cargo.toml
 
 // TODO:
-// magnitude,
 // cross product,
 // exponentiation e.g. squaring an NVec is taking dot with itself
-// simd,
+// simd + inlining ( #[inline] ),
 // additional operations,
 // matrices??,
 // tests for ops between multiple types,
@@ -30,6 +29,19 @@ pub trait ElementMul<Rhs = Self>{
     fn element_multiply(self, rhs: Rhs) -> Self::Output; 
 }
 
+pub trait Magnitude{
+    type Output;
+    fn magnitude(self) -> Self::Output; 
+    fn mag(self) -> Self::Output; //alias of magnitude
+}
+
+pub trait CrossProduct<Rhs = Self>{
+    type Output; 
+    fn cross(self, rhs: Rhs) -> Self::Output; 
+}
+
+
+
 
 
 //constructor function
@@ -39,11 +51,7 @@ impl<T, const N: usize> NewNVec<T, N> for NVec<T, N> {
     }
 }
 
-pub trait Magnitude{
-    type Output;
-    fn magnitude(self) -> Self::Output; 
-    fn mag(self) -> Self::Output; //alias of magnitude
-}
+
 
 
 // This is an implementation that would mean that whenever an NVec was referenced, it would return its components
@@ -151,7 +159,42 @@ where
     }
 }
 
+impl<T, U, const N: usize, V> Mul<U> for NVec<T, N>
+    where
+        T: Copy + AsPrimitive<V> + Promote<U, Output = V>,
+        U: Copy + AsPrimitive<V>,
+        V: Copy + Mul<Output = V> + Add<Output = V> + Default + 'static, //numerical primitive
 
+{
+    type Output = NVec<T, N>;
+
+    fn mul(self, rhs: ) -> Self::Output {
+        
+    }
+
+
+}
+impl<T, U, V> CrossProduct<NVec<U, 3>> for NVec<T, 3> // simple cross product in VA form for 3d only
+where
+    T: Copy + AsPrimitive<V> + Promote<U, Output = V>,
+    U: Copy + AsPrimitive<V>,
+    V: Copy + Sub<Output = V> + Mul<Output = V> + 'static,
+{
+    type Output = NVec<V, 3>;
+
+    fn cross(self, rhs: NVec<U, 3>) -> Self::Output {
+        let result: [V; 3] = [ //just using a formula rather than building more fancily
+
+            self.components[1].as_() * rhs.components[2].as_() - self.components[2].as_() * rhs.components[1].as_(),
+            self.components[2].as_() * rhs.components[0].as_() - self.components[0].as_() * rhs.components[2].as_(),
+            self.components[0].as_() * rhs.components[1].as_() - self.components[1].as_() * rhs.components[0].as_(),
+        ];
+
+        NVec::new(result)
+    }
+}
+
+// Use as blueprint of implementation for operation that only takes a single param (e.g. operates on self)
 impl<T, const N: usize> Magnitude for NVec<T, N> //note this is not define for i64 and u64 as it could cause overflows on it's conversion in to f64
 where
     T: Copy + Add<T> + Mul<Output = T>, //
@@ -322,6 +365,7 @@ mod tests{
 
         };
     }
+    
 
     //special versions needed here - hardcoded because I am lazy
 
@@ -358,7 +402,28 @@ mod tests{
             )*
 
         };
+    }
 
+    macro_rules! generate_same_type_cross_tests {
+        ($op1:ident, $op2:ident, $val1:expr, $val2:expr, $val3:expr, $($type:ty), *) => {
+            $(
+                let a = NVec{components: [$val1 as $type, $val2 as $type, $val3 as $type]};
+                let b = NVec{components: [$val3 as $type, $val2 as $type, $val1 as $type]}; //swapped around!
+                let c = NVec{components: [
+                                        $val2 as $type * $val1 as $type - $val3 as $type * $val2 as $type,
+                                        $val3 as $type * $val3 as $type - $val1 as $type * $val1 as $type,
+                                        $val1 as $type * $val2 as $type - $val2 as $type * $val3 as $type 
+                                        ]};
+                let d = $op1(a, b);
+                //let e = $op1(b, a);
+                println!("A: {:?}\nB: {:?}\n\nC: {:?}\nA op B: {:?}\n\n\n", a, b, c, d);
+
+
+                assert_eq!(d, c);
+                //assert_eq!(e, c);
+            )*
+
+        };
     }
 
     #[test]
@@ -380,6 +445,11 @@ mod tests{
         fn elemul<A: ElementMul<B, Output = C>, B, C>(a: A, b: B) -> C {
             a.element_multiply(b)
         }
+        
+        fn cross<A: CrossProduct<B, Output = C>, B, C>(a: A, b: B) -> C {
+            a.cross(b)
+        }
+
 
         // Tests for addition
         println!("\n\nTesting for addition\n\n");
@@ -401,10 +471,20 @@ mod tests{
 
         // Tests for dot product
         println!("\n\nTesting for dot product\n\n");
-        generate_same_type_dot_tests!(mul, 1, 2, 3, i8, i16, i32, i64, u8, u16, u32, u64, f32, f64);
+        generate_same_type_dot_tests!(
+            mul, 1, 2, 3, i8, i16, i32, i64, u8, u16, u32, u64, f32, f64
+        );
 
         println!("\n\nTesting for magnitude\n\n");
-        generate_same_type_mag_tests!(1, 2, 3, i8, i16, i32, u8, u16, u32, f32, f64);
+        generate_same_type_mag_tests!(
+            1, 2, 3, i8, i16, i32, u8, u16, u32, f32, f64
+        );
+
+        generate_same_type_cross_tests!(
+            cross, mul, 1, 2, 3, i8, i16, i32, i64, f32, f64 // no unsigned integers
+        );
+
+
     }
 
     #[test]

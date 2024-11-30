@@ -34,3 +34,7 @@ harness = false
 [[bench]]
 name = "bench_dot_product"
 harness = false
+
+[[bench]]
+name = "bench_mag"
+harness = false

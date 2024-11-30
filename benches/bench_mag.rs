@@ -8,7 +8,7 @@ macro_rules! iterate_types {
         $(
             $group.bench_with_input(
                 BenchmarkId::new(
-                    format!("Adding NVecs of size {:?} with type {:?} and components {}", $n, std::any::type_name::<$types>(), $numlist), $numlist),
+                    format!("Taking mag of NVec of size {:?} with type {:?} and components {}", $n, std::any::type_name::<$types>(), $numlist), $numlist),
                     &$numlist,
                     |b, numlist|
                     b.iter(
@@ -43,7 +43,7 @@ impl std::fmt::Display for NumList {
 }
 
 
-//// This is a benchmark for the NVector operation: Addition
+//// This is a benchmark for the NVector operation: Magnitude
 ///
 /// The primary objective is to test the operation across NVecs of a specified set of sizes and numerical types
 /// To allow us to do this, we can use macros to programmatically generate Criterion tests for us according to our parameters
@@ -68,8 +68,8 @@ impl std::fmt::Display for NumList {
 /// 
 
 
-fn bench_addition(c: &mut Criterion) {
-    let mut group: BenchmarkGroup<'_, measurement::WallTime> = c.benchmark_group("Addition");
+fn bench_mag(c: &mut Criterion) {
+    let mut group: BenchmarkGroup<'_, measurement::WallTime> = c.benchmark_group("Magnitude");
 
     let number_of_runs: u32 = 1; //// Set this to choice - this is how many times we will generate numbers
 
@@ -88,5 +88,5 @@ fn bench_addition(c: &mut Criterion) {
     group.finish();
 }
 
-criterion_group!(benches, bench_addition);
+criterion_group!(benches, bench_mag);
 criterion_main!(benches);
