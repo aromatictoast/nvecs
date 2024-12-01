@@ -3,7 +3,8 @@ use std::ops::*;
 //need num-traits = "0.2" under dependencies in cargo.toml
 
 // TODO:
-// cross product,
+// figure out how to implement for two types
+//MAKE PARAMETERS IN TO REFERENCES FOR THE ONES WHERE IT IS NATURAL
 // exponentiation e.g. squaring an NVec is taking dot with itself
 // simd + inlining ( #[inline] ),
 // additional operations,
@@ -15,13 +16,57 @@ use std::ops::*;
 // It implements many useful methods used in vector maths, e.g. vector addition, subtraction, and the dot product
 
 #[derive(Debug, Copy, Clone, PartialEq)]
-pub struct NVec<T, const N: usize> {
+pub struct NVec<T: Numerical, const N: usize> {
     pub components: [T; N],
 }
+pub trait IsNvec{} //type signifier to help with different implementations of operation orders, e.g. 1 * a, a * 1
+impl<T: Numerical, const N: usize> IsNvec for NVec<T, N> {} // a local trait to satisfy orphan rule things - impl mul<NVec<T, N>> for U (where nlkdslkdsgnlk)
 
-pub trait NewNVec<T, const N: usize> {
+//used to define multiple implementations sharing an op, e.g. multiplication
+//this defines any numerical primitive we support
+//super-trait - it requires that all the other listed traits be implemented to be able to be implemented itself
+pub trait Numerical: Add<Output = Self> + Mul<Output = Self> + Sub<Output = Self> + Div<Output = Self> + Copy + PartialEq + PartialOrd {}
+
+//implements the Numerical trait - it defines all supported numerical primitive types
+
+macro_rules! numerical {
+    ($($type:ty), *) => {
+        $(
+            impl Numerical for $type {}
+        )*
+    };
+}
+
+numerical!(i8, i16, i32, i64, i128, u8, u16, u32, u64, u128, f32, f64);
+// This is the list of all number types supported
+// If you want some more, add them here
+
+
+
+pub trait NewNVec<T: Numerical, const N: usize> {
     fn new(components: [T; N]) -> NVec<T, N>;
 }
+
+//constructor function
+impl<T: Numerical, const N: usize> NewNVec<T, N> for NVec<T, N> {
+    fn new(components: [T; N]) -> Self {
+        NVec::<T, N> { components }
+    }
+}
+
+//impl<T: Numerical, const N: usize> std::fmt::Display for NVec<T, N> {
+//    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//        write!(f, "{:?}", self.components)
+//    }
+//} 
+
+
+
+
+
+
+// Operations //
+
 
 // Multiply the elements to create a new vector
 pub trait ElementMul<Rhs = Self>{
@@ -41,15 +86,19 @@ pub trait CrossProduct<Rhs = Self>{
 }
 
 
+// Implementations
+
+// split up implementations for better readability
+pub mod add;
+pub mod sub;
+pub mod element_multiply;
+pub mod mul;
+pub mod cross;
+pub mod mag;
+
+pub mod test_macros; //the tests should be in each implementation file, but they use a common set of macros linked here
 
 
-
-//constructor function
-impl<T, const N: usize> NewNVec<T, N> for NVec<T, N> {
-    fn new(components: [T; N]) -> Self {
-        NVec::<T, N> { components }
-    }
-}
 
 
 
@@ -78,153 +127,12 @@ impl<T, const N: usize> NewNVec<T, N> for NVec<T, N> {
 // See the Promote! stack....
 // Therefore the compiler stops us operating on incompatible types, or crucially, NVecs of differing lengths
 
-// Use this general format
-
-// Implement Add for NVec
-impl<T, U, V, const N: usize> Add<NVec<U, N>> for NVec<T, N>
-where
-    T: Copy + AsPrimitive<V> + Promote<U, Output = V>, // This ensures that we convert in to the correct type
-    U: Copy + AsPrimitive<V>,
-    V: Copy + Add<Output = V> + 'static,
-{
-    type Output = NVec<V, N>;
-
-    fn add(self, rhs: NVec<U, N>) -> Self::Output {
-        let result: [V; N] =
-            core::array::from_fn(
-                |i: usize|
-                self.components[i].as_() + rhs.components[i].as_()
-            );
-
-        NVec::new(result)
-    }
-}
-
-// Subtraction
-impl<T, U, V, const N: usize> Sub<NVec<U, N>> for NVec<T, N>
-where
-    T: Copy + AsPrimitive<V> + Promote<U, Output = V>, // This ensures that we convert in to the correct type
-    U: Copy + AsPrimitive<V>,
-    V: Copy + Sub<Output = V> + 'static,
-{
-    type Output = NVec<V, N>;
-
-    fn sub(self, rhs: NVec<U, N>) -> Self::Output {
-        let result: [V; N] =
-            core::array::from_fn(|i: usize| self.components[i].as_() - rhs.components[i].as_());
-
-        //arr.into();
-
-        NVec::new(result)
-    }
-}
-
-// Multiplying elements - not the dot product
-impl<T, U, V, const N: usize> ElementMul<NVec<U, N>> for NVec<T, N>
-where
-    T: Copy + AsPrimitive<V> + Promote<U, Output = V>, // This ensures that we convert in to the correct type
-    U: Copy + AsPrimitive<V>,
-    V: Copy + Mul<Output = V> + 'static,
-{
-    type Output = NVec<V, N>;
-
-    fn element_multiply(self, rhs: NVec<U, N>) -> Self::Output {
-        let result: [V; N] =
-            core::array::from_fn(|i: usize| self.components[i].as_() * rhs.components[i].as_());
-
-        //arr.into();
-
-        NVec::new(result)
-    }
-}
-
-// Multiplying vectors - the dot product
-impl<T, U, V, const N: usize> Mul<NVec<U, N>> for NVec<T, N>
-where
-    T: Copy + AsPrimitive<V> + Promote<U, Output = V>, // This ensures that we convert in to the correct type
-    U: Copy + AsPrimitive<V>,
-    V: Copy + Mul<Output = V> + Add<Output = V> + Default + 'static, //numerical primitive
-{
-    type Output = V;
-
-    fn mul(self, rhs: NVec<U, N>) -> Self::Output {
-        self
-        .components
-        .iter()
-        .zip(rhs.components.iter())
-        .map(|(a, b)| a.as_() * b.as_())
-        .fold(V::default(), |acc, elem| acc + elem) //sums the items of an array - fold moves left to right with an accumulator
-
-        
-    }
-}
-
-impl<T, U, const N: usize, V> Mul<U> for NVec<T, N>
-    where
-        T: Copy + AsPrimitive<V> + Promote<U, Output = V>,
-        U: Copy + AsPrimitive<V>,
-        V: Copy + Mul<Output = V> + Add<Output = V> + Default + 'static, //numerical primitive
-
-{
-    type Output = NVec<T, N>;
-
-    fn mul(self, rhs: ) -> Self::Output {
-        
-    }
 
 
-}
-impl<T, U, V> CrossProduct<NVec<U, 3>> for NVec<T, 3> // simple cross product in VA form for 3d only
-where
-    T: Copy + AsPrimitive<V> + Promote<U, Output = V>,
-    U: Copy + AsPrimitive<V>,
-    V: Copy + Sub<Output = V> + Mul<Output = V> + 'static,
-{
-    type Output = NVec<V, 3>;
 
-    fn cross(self, rhs: NVec<U, 3>) -> Self::Output {
-        let result: [V; 3] = [ //just using a formula rather than building more fancily
 
-            self.components[1].as_() * rhs.components[2].as_() - self.components[2].as_() * rhs.components[1].as_(),
-            self.components[2].as_() * rhs.components[0].as_() - self.components[0].as_() * rhs.components[2].as_(),
-            self.components[0].as_() * rhs.components[1].as_() - self.components[1].as_() * rhs.components[0].as_(),
-        ];
 
-        NVec::new(result)
-    }
-}
-
-// Use as blueprint of implementation for operation that only takes a single param (e.g. operates on self)
-impl<T, const N: usize> Magnitude for NVec<T, N> //note this is not define for i64 and u64 as it could cause overflows on it's conversion in to f64
-where
-    T: Copy + Add<T> + Mul<Output = T>, //
-    //V: Copy + AsPrimitive<V> + num_traits::real::Real + Mul<Output = V> + Add<Output = V> + Default + 'static + From<T>, //numerical primitive
-    f64: From<T>
-{
-    type Output = f64; // Shares output type with sqrt()
-
-    fn magnitude(self) -> Self::Output {
-
-        let mut acc: f64 = 0.0; //don't bother with integers, no point since going to root
-
-        for i in 0..N { //N - 1?
-            acc = acc + (f64::from(self.components[i]) * f64::from(self.components[i])); //we could use square here but due to pow for ints and powi or powf for floats, simpler just to do this
-        };
-
-        acc.sqrt()
-    }
-
-    fn mag(self) -> Self::Output {
-
-        let mut acc: f64 = 0.0; //don't bother with integers, no point since going to root
-
-        for i in 0..N { //N - 1?
-            acc = acc + (f64::from(self.components[i]) * f64::from(self.components[i])); //we could use square here but due to pow for ints and powi or powf for floats, simpler just to do this
-        };
-
-        acc.sqrt()
-    }
-}
+// Promotion System for Generic Numerical Primitives //
 
 
 pub trait Promote<T> {
@@ -232,6 +140,7 @@ pub trait Promote<T> {
 }
 
 // Implement Promote - builds the implementations from the promote! tower below
+
 
 macro_rules! promote {
     ($t1:ty, $t2:ty => $result:ty) => {
@@ -244,10 +153,35 @@ macro_rules! promote {
     };
 }
 
-// This is a generic that sets any operation involving NVecs of the same T to yield one of that type
-impl<T> Promote<T> for T {
-    type Output = T;
+macro_rules! promote_self { //for promotion of self to self e.g. i8 to i8 - needed for implementations that cross types e.g. mul by nvec for nvec or mul by numerical for nvec etc etc
+    ($t1:ty, $t2:ty => $result:ty) => {
+        impl Promote<$t2> for $t1 {
+            type Output = $result;
+        } 
+    };
 }
+
+
+promote_self!(i8, i8 => i8);
+promote_self!(i16, i16 => i16);
+promote_self!(i32, i32 => i32);
+promote_self!(i64, i64 => i64);
+promote_self!(i128, i128 => i128);
+
+promote_self!(u8, u8 => u8);
+promote_self!(u16, u16 => u16);
+promote_self!(u32, u32 => u32);
+promote_self!(u64, u64 => u64);
+promote_self!(u128, u128 => u128);
+
+promote_self!(f32, f32 => f32);
+promote_self!(f64, f64 => f64);
+
+
+// This is a generic that sets any operation involving NVecs of the same T to yield one of that type
+//impl<T: Numerical> Promote<T> for T {
+//    type Output = T;
+//}
 
 // Integer and float combinations
 // These are the rules for what the resultant type should be when an operation is performed between two components
@@ -338,255 +272,3 @@ promote!(u64, f64 => f64);
 
 // Float + Float => Larger Float
 promote!(f32, f64 => f64);
-
-#[cfg(test)]
-mod tests{
-    use super::*;
-    //Need to generate tests for operations betwee NVecs with a different type T
-
-    // This macro assembles 2 NVecs from passed values, applies a function passed as an operator to them, then applies a second function to their components together in turn
-    // While making sure to convert to the correct types at any given moment
-    // op1 is the operation to appply to the NVecs themselves
-    // op2 is the operation to apply to the components of each matched elementwise to get the same effect
-    macro_rules! generate_same_type_tests {
-        ($op1:ident, $op2:ident, $val1:expr, $val2:expr, $val3:expr, $($type:ty), *) => {
-            $(
-                let a = NVec{components: [$val1 as $type, $val2 as $type, $val3 as $type]};
-                let b = NVec{components: [$val1 as $type, $val2 as $type, $val3 as $type]};
-                let c = NVec{components: [$op2($val1 as $type, $val1 as $type), $op2($val2 as $type, $val2 as $type), $op2($val3 as $type, $val3 as $type)]};
-                let d = $op1(a, b);
-                let e = $op1(b, a);
-                println!("A: {:?}\nB: {:?}\n\nC: {:?}\nA op B: {:?}\nB op A: {:?}\n\n\n", a, b, c, d, e);
-
-
-                assert_eq!(d, c);
-                assert_eq!(e, c);
-            )*
-
-        };
-    }
-    
-
-    //special versions needed here - hardcoded because I am lazy
-
-    macro_rules! generate_same_type_dot_tests {
-        ($op1:ident, $val1:expr, $val2:expr, $val3:expr, $($type:ty), *) => {
-            $(
-                let a = NVec{components: [$val1 as $type, $val2 as $type, $val3 as $type]};
-                let b = NVec{components: [$val1 as $type, $val2 as $type, $val3 as $type]};
-                let c = $val1 as $type * $val1 as $type + $val2 as $type * $val2 as $type + $val3 as $type * $val3 as $type;
-                let d = $op1(a, b);
-                let e = $op1(b, a);
-                println!("A: {:?}\nB: {:?}\n\nC: {:?}\nA op B: {:?}\nB op A: {:?}\n\n\n", a, b, c, d, e);
-
-
-                assert_eq!(d, c);
-                assert_eq!(e, c);
-            )*
-
-        };
-    }
-
-    macro_rules! generate_same_type_mag_tests {
-        ($val1:expr, $val2:expr, $val3:expr, $($type:ty), *) => {
-            $(
-                let a = NVec{components: [$val1 as $type, $val2 as $type, $val3 as $type]};
-                let b = ($val1 as $type * $val1 as $type + $val2 as $type * $val2 as $type + $val3 as $type * $val3 as $type) as f64;
-                let c = a.mag();
-
-                println!("A: {:?}\n|A|: {:?}\nB: {:?}", a, c, b);
-
-
-                assert_eq!(c, b.sqrt()); //probably don't need both but why not
-                assert_eq!(b.sqrt(), c);
-            )*
-
-        };
-    }
-
-    macro_rules! generate_same_type_cross_tests {
-        ($op1:ident, $op2:ident, $val1:expr, $val2:expr, $val3:expr, $($type:ty), *) => {
-            $(
-                let a = NVec{components: [$val1 as $type, $val2 as $type, $val3 as $type]};
-                let b = NVec{components: [$val3 as $type, $val2 as $type, $val1 as $type]}; //swapped around!
-                let c = NVec{components: [
-                                        $val2 as $type * $val1 as $type - $val3 as $type * $val2 as $type,
-                                        $val3 as $type * $val3 as $type - $val1 as $type * $val1 as $type,
-                                        $val1 as $type * $val2 as $type - $val2 as $type * $val3 as $type 
-                                        ]};
-                let d = $op1(a, b);
-                //let e = $op1(b, a);
-                println!("A: {:?}\nB: {:?}\n\nC: {:?}\nA op B: {:?}\n\n\n", a, b, c, d);
-
-
-                assert_eq!(d, c);
-                //assert_eq!(e, c);
-            )*
-
-        };
-    }
-
-    #[test]
-
-    fn same_type_tests() {
-        //declare all the operations, then call the tests to be assembled below
-        fn add<A: std::ops::Add<B, Output = C>, B, C>(a: A, b: B) -> C {
-            a + b
-        }
-
-        fn sub<A: std::ops::Sub<B, Output = C>, B, C>(a: A, b: B) -> C {
-            a - b
-        }
-
-        fn mul<A: std::ops::Mul<B, Output = C>, B, C>(a: A, b: B) -> C {
-            a * b
-        }
-
-        fn elemul<A: ElementMul<B, Output = C>, B, C>(a: A, b: B) -> C {
-            a.element_multiply(b)
-        }
-        
-        fn cross<A: CrossProduct<B, Output = C>, B, C>(a: A, b: B) -> C {
-            a.cross(b)
-        }
-
-
-        // Tests for addition
-        println!("\n\nTesting for addition\n\n");
-        generate_same_type_tests!(
-            add, add, 1, 2, 3, i8, i16, i32, i64, u8, u16, u32, u64, f32, f64
-        );
-
-        // Tests for subtraction
-        println!("\n\nTesting for subtraction\n\n");
-        generate_same_type_tests!(
-            sub, sub, 1, 2, 3, i8, i16, i32, i64, u8, u16, u32, u64, f32, f64
-        );
-
-        // Tests for elementwise multiplication
-        println!("\n\nTesting for elementwise multiplication\n\n");
-        generate_same_type_tests!(
-            elemul, mul, 1, 2, 3, i8, i16, i32, i64, u8, u16, u32, u64, f32, f64
-        );
-
-        // Tests for dot product
-        println!("\n\nTesting for dot product\n\n");
-        generate_same_type_dot_tests!(
-            mul, 1, 2, 3, i8, i16, i32, i64, u8, u16, u32, u64, f32, f64
-        );
-
-        println!("\n\nTesting for magnitude\n\n");
-        generate_same_type_mag_tests!(
-            1, 2, 3, i8, i16, i32, u8, u16, u32, f32, f64
-        );
-
-        generate_same_type_cross_tests!(
-            cross, mul, 1, 2, 3, i8, i16, i32, i64, f32, f64 // no unsigned integers
-        );
-
-
-    }
-
-    #[test]
-    fn cross_type_tests() {
-        //generating the tests for operations across types is hard so we'll just do 2 manually
-
-        println!("\n\nTesting for addition\n\n");
-        let a: NVec<f64, 3> = NVec {
-            components: [1.01 as f64, -2.65 as f64, 3.4 as f64],
-        };
-        let b: NVec<i32, 3> = NVec {
-            components: [4, -5, 200],
-        };
-
-        assert_eq!(
-            a + b,
-            NVec {
-                components: [1.01 + 4f64, -2.65 + -5f64, 3.4 + 200f64]
-            }
-        );
-
-        assert_eq!(
-            b + a,
-            NVec {
-                components: [1.01 + 4f64, -2.65 + -5f64, 3.4 + 200f64]
-            }
-        );
-
-        println!("\n\nTesting for subtraction\n\n");
-        let a: NVec<f64, 3> = NVec {
-            components: [1.01 as f64, -2.65 as f64, 3.4 as f64],
-        };
-        let b: NVec<i32, 3> = NVec {
-            components: [4, -5, 200],
-        };
-        println!("a, b\n");
-        assert_eq!(
-            a - b,
-            NVec {
-                components: [1.01 - 4f64, -2.65 - -5f64, 3.4 - 200f64]
-            }
-        );
-
-        println!("b, a\n");
-        assert_eq!(
-            b - a,
-            NVec {
-                components: [-1.01 + 4f64, 2.65 + -5f64, -3.4 + 200f64]
-            }
-        );
-
-        println!("\n\nTesting for elementwise multiplication\n\n");
-        let a: NVec<f64, 3> = NVec {
-            components: [1.01 as f64, -2.65 as f64, 3.4 as f64],
-        };
-        let b: NVec<i32, 3> = NVec {
-            components: [4, -5, 200],
-        };
-
-        assert_eq!(
-            a.element_multiply(b),
-            NVec {
-                components: [1.01 * 4f64, -2.65 * -5f64, 3.4 * 200f64]
-            }
-        );
-
-        assert_eq!(
-            b.element_multiply(a),
-            NVec {
-                components: [1.01 * 4f64, -2.65 * -5f64, 3.4 * 200f64]
-            }
-        );
-
-        println!("\n\nTesting for dot product\n\n");
-        let a: NVec<f64, 3> = NVec {
-            components: [1.01 as f64, -2.65 as f64, 3.4 as f64],
-        };
-        let b: NVec<i32, 3> = NVec {
-            components: [4, -5, 200],
-        };
-
-        assert_eq!(a * b, 1.01 * 4f64 + -2.65 * -5f64 + 3.4 * 200f64);
-
-        assert_eq!(b * a, 1.01 * 4f64 + -2.65 * -5f64 + 3.4 * 200f64);
-
-        println!("\n\nTesting for magnitude\n\n");
-        let a: NVec<f64, 3> = NVec {
-            components: [1.01 as f64, -2.65 as f64, 3.4 as f64],
-        };
-        let b: NVec<i32, 3> = NVec {
-            components: [4, -5, 3],
-        };
-
-        assert_eq!(
-            a.mag(),
-            (1.01f64 * 1.01f64 + (-2.65f64) * (-2.65f64) + 3.4f64 * 3.4f64).sqrt()
-        );
-
-        assert_eq!(
-            b.mag(),
-            f64::from(4i32 * 4i32 + (-5i32) * (-5i32) + 3i32 * 3i32).sqrt()
-        );
-    }
-
-}
